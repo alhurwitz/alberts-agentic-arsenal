@@ -6,13 +6,22 @@ import { basename, dirname, join, resolve, sep } from "node:path"
 // A page matches when the directory is inside one of its frontmatter `paths:` entries
 // (longest match wins), else when a page is named after the directory or one of its ancestors.
 // Pages are re-read on every request so vault edits apply immediately.
-const VAULT = process.env.SECOND_BRAIN_DIR ?? join(homedir(), "Code", "second-brain")
+const expand = (path: string) => resolve(path.replace(/^~(?=$|\/)/, homedir()))
+const configured = (): string | undefined => {
+  const file = join(homedir(), ".config", "agentic-arsenal", "config.json")
+  if (!existsSync(file)) return undefined
+  try {
+    return JSON.parse(readFileSync(file, "utf8")).secondBrainDir
+  } catch {
+    return undefined
+  }
+}
+const VAULT = expand(process.env.SECOND_BRAIN_DIR ?? configured() ?? "~/Code/second-brain")
 const PROJECTS = join(VAULT, "projects")
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n?/
 
 type Page = { name: string; paths: string[]; body: string }
 
-const expand = (path: string) => resolve(path.replace(/^~(?=$|\/)/, homedir()))
 const inside = (dir: string, root: string) => dir === root || dir.startsWith(root + sep)
 
 const loadPages = (): Page[] => {
