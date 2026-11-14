@@ -1,0 +1,25 @@
+{
+  "caveman": {
+    "prompt": "Caveman mode: terse replies that cut output tokens",
+    "default": false,
+    "instructions": "caveman.md",
+    "skills": ["caveman", "caveman-commit", "caveman-compress", "caveman-help", "caveman-review", "caveman-stats"],
+    "commands": ["caveman", "caveman-commit", "caveman-compress", "caveman-help", "caveman-review", "caveman-stats"],
+    "hooks": ["caveman"]
+  },
+  "second-brain": {
+    "prompt": "Second brain: a Markdown/Obsidian vault agents read for context and write learnings to",
+    "default": false,
+    "instructions": "second-brain.md",
+    "commands": ["save", "brain-lint", "brain-reindex"],
+    "hooks": ["second-brain"]
+  },
+  "computer-use": {
+    "prompt": "Computer use (macOS): let agents drive native app windows via open-computer-use",
+    "default": false,
+    "platforms": ["Darwin"],
+    "skills": ["computer-use"],
+    "commands": ["computer"],
+    "mcp": ["open-computer-use"]
+  }
+}

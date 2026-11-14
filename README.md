@@ -4,37 +4,51 @@ One setup for every coding agent: skills, agents, commands, hooks and MCP, insta
 
 Everything lives here once. `install.py` puts it where each harness looks. Items are shared by default; a harness gets its own variant only where it needs one.
 
-## Install
+## Quick start
+
+You need Python 3.9+ and git. Nothing else is required; optional pieces download what they need.
 
 ```sh
 git clone https://github.com/alhurwitz/alberts-agentic-arsenal ~/Code/alberts-agentic-arsenal
 cd ~/Code/alberts-agentic-arsenal
-./install.py --dry-run all     # preview
-./install.py all               # or: ./install.py opencode claude
+./install.py all                 # or pick harnesses: ./install.py opencode claude
 ```
 
-Shared files are symlinked, so editing them here updates every harness. Converted files (commands and agents for non-OpenCode harnesses) are regenerated, so re-run `./install.py` after editing those. Anything replaced is moved to `<path>.bak-<timestamp>`; config files are merged, not overwritten.
+The first run asks about each optional module (below) and remembers your answers in `~/.config/agentic-arsenal/config.json`. Change them later with `./install.py all --reconfigure`, or per run with `--with <module>` / `--without <module>`. Preview any run with `--dry-run`.
 
-Needs Python 3.9+. Set `GITHUB_MCP_TOKEN` for the GitHub MCP server.
+Then restart your agent.
 
-## Layout
+To update: `git pull && ./install.py all`.
 
+### Optional modules
+
+| Module | What you get | Asks |
+|---|---|---|
+| `caveman` | Terse replies that cut output tokens: `/caveman` commands, skills, OpenCode plugin, and an instructions block | yes/no |
+| `second-brain` | A Markdown (Obsidian-compatible) vault your agents read for context and write learnings to: `/save`, `/brain-lint`, `/brain-reindex`, an OpenCode plugin that injects the current repo's page, and an instructions block | yes/no, then the vault folder. A starter vault is created there if the folder doesn't exist |
+| `computer-use` | macOS only. Agents drive native app windows through [open-computer-use](https://github.com/nogu66/open-computer-use): MCP server, `computer-use` skill, `/computer` | yes/no. Downloads the pinned `ocu` release to `~/.local/bin/ocu` (checksum verified) if it isn't installed. Grant Accessibility (and Screen Recording for screenshots) to your terminal or agent app |
+
+Everything else always installs: the UI/design skills and commands, the GitHub and Playwright MCP servers, and the OpenCode find plugin.
+
+### GitHub MCP token
+
+The GitHub MCP server reads `GITHUB_MCP_TOKEN`. Create a fine-grained token on GitHub and export it in your shell profile:
+
+```sh
+export GITHUB_MCP_TOKEN=github_pat_...
 ```
-AGENTS.md                  global instructions (CLAUDE.md, copilot-instructions.md, Codex AGENTS.md)
-skills/<skill>/SKILL.md    shared skill
-skills/<skill>/<harness>/  optional harness-specific copy of the skill
-agents/<agent>/agent.md    shared agent
-agents/<agent>/<harness>.md  harness-specific agent (only this harness gets it if no agent.md)
-commands/<cmd>/command.md  shared slash command
-commands/<cmd>/<harness>.md  harness-specific command
-hooks/<hook>/<harness>/    plugin or hook code, per harness
-mcp/servers.json           MCP servers, written once; ${VAR} for secrets
-install.py                 installer
-```
 
-Harness names: `opencode`, `claude`, `codex`, `copilot`.
+### Agent teams
 
-## Where things go
+The army (hierarchical agent teams) lives in its own repo, [agentic-army](https://github.com/alhurwitz/agentic-army). Clone it next to this one (`~/Code/agentic-army`, or set `AGENTIC_ARMY_DIR`) and `./install.py opencode` runs its installer too.
+
+## What the installer touches
+
+- **Skills, commands, agents, plugins**: symlinks into this repo, so `git pull` updates them. Commands that are converted for a harness or contain your settings are written as files and refreshed on each run.
+- **Global instructions** (`AGENTS.md`, `CLAUDE.md`, `copilot-instructions.md`): only a block between `<!-- agentic-arsenal-begin -->` and `<!-- agentic-arsenal-end -->`. Your own text outside it is kept.
+- **Config files** (`opencode.json`, `~/.claude.json`, Codex `config.toml`, Copilot `mcp-config.json`, VS Code `mcp.json`): entries merged in, with a `.bak-<timestamp>` copy first.
+- Anything else it would replace is moved to `<path>.bak-<timestamp>`.
+- Turning a module off removes the links and generated files it installed. MCP entries are left in place.
 
 | | OpenCode | Claude Code | Codex | Copilot |
 |---|---|---|---|---|
@@ -47,15 +61,25 @@ Harness names: `opencode`, `claude`, `codex`, `copilot`.
 
 For non-OpenCode harnesses, OpenCode-only frontmatter (`model`, `agent`, `subtask`, `mode`, `permissions`) is stripped from commands and agents.
 
-## What's in it
+## Layout
 
-- **Caveman**: terse-output mode. Skills `caveman*`, commands `/caveman*`, OpenCode plugin.
-- **Army**: moved to its own repo, [agentic-army](https://github.com/alhurwitz/agentic-army). `./install.py opencode` runs its `install.sh` when it is cloned next to this repo (`../agentic-army`, or set `AGENTIC_ARMY_DIR`).
-- **Second brain**: injects the matching project page from an Obsidian vault (`SECOND_BRAIN_DIR`, default `~/Code/second-brain`). Commands `/save`, `/brain-lint`, `/brain-reindex`.
-- **UI and design**: impeccable, frontend-design, design-system, ui-ux-pro-max, ui-styling, ui-verify, accessibility, animation-forge, browser-qa, dev-browser, computer-use, ui-demo, liquid-glass-design, frontend-slides.
-- **Find**: OpenCode TUI search over the current session.
-- **MCP**: GitHub, Playwright, open-computer-use.
+```
+modules.json                 optional modules and the items each one owns
+instructions/<module>.md     instruction blocks added for enabled modules
+templates/second-brain/      starter vault
+skills/<skill>/SKILL.md      shared skill
+skills/<skill>/<harness>/    optional harness-specific copy of the skill
+agents/<agent>/agent.md      shared agent
+agents/<agent>/<harness>.md  harness-specific agent
+commands/<cmd>/command.md    shared slash command
+commands/<cmd>/<harness>.md  harness-specific command
+hooks/<hook>/<harness>/      plugin or hook code, per harness
+mcp/servers.json             MCP servers, written once; ${VAR} for secrets
+install.py                   installer
+```
 
-## Adding a harness
+Harness names: `opencode`, `claude`, `codex`, `copilot`. `{{SECOND_BRAIN_DIR}}` in a command or instruction file is replaced with the configured vault folder.
 
-Add an entry to `HARNESSES` in `install.py` and an `mcp_<harness>` method. Add `hook_<harness>` if it supports hooks.
+## Contributing
+
+Open a pull request. To add a harness, add an entry to `HARNESSES` in `install.py` and an `mcp_<harness>` method, plus `hook_<harness>` if it supports hooks. To add an optional module, add it to `modules.json`.
