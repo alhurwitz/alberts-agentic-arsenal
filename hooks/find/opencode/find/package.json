@@ -1,0 +1,8 @@
+{
+  "name": "find-tui",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tui": "./tui.ts"
+  }
+}

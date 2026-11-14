@@ -1,0 +1,6 @@
+node_modules/
+.DS_Store
+*.bak-*
+__pycache__/
+# impeccable downloads and verifies its engine binary on first use
+skills/impeccable/scripts/bin/

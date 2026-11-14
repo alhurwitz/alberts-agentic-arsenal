@@ -1,0 +1,8 @@
+{
+  "name": "army-tui",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tui": "./tui.tsx"
+  }
+}
