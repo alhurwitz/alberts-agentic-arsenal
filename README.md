@@ -46,8 +46,8 @@ The army (hierarchical agent teams) lives in its own repo, [agentic-army](https:
 
 - **Skills, commands, agents, plugins**: symlinks into this repo, so `git pull` updates them. Commands that are converted for a harness or contain your settings are written as files and refreshed on each run.
 - **Global instructions** (`AGENTS.md`, `CLAUDE.md`, `copilot-instructions.md`): only a block between `<!-- agentic-arsenal-begin -->` and `<!-- agentic-arsenal-end -->`. Your own text outside it is kept.
-- **Config files** (`opencode.json`, `~/.claude.json`, Codex `config.toml`, Copilot `mcp-config.json`, VS Code `mcp.json`): entries merged in, with a `.bak-<timestamp>` copy first.
-- Anything else it would replace is moved to `<path>.bak-<timestamp>`.
+- **Config files** (`opencode.json`, `~/.claude.json`, Codex `config.toml`, Copilot `mcp-config.json`, VS Code `mcp.json`): entries merged in, with a backup copy first.
+- Anything else it would replace is moved to `~/.config/agentic-arsenal/backups/<timestamp>/`, outside every harness folder so agents never load backups.
 - Turning a module off removes the links and generated files it installed. MCP entries are left in place.
 
 | | OpenCode | Claude Code | Codex | Copilot |
