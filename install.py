@@ -21,12 +21,14 @@ import os
 import platform
 import re
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("ARSENAL_HOME", Path.home()))
+ARMY = Path(os.environ.get("AGENTIC_ARMY_DIR", REPO.parent / "agentic-army"))
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.S)
 ENV_REF = re.compile(r"\$\{(\w+)\}")
@@ -138,7 +140,7 @@ class Installer:
 
     def install_markdown(self, kind: str, shared: str) -> None:
         target = self.paths[kind]
-        if target is None:
+        if target is None or not (REPO / kind).is_dir():
             return
         for item in sorted(p for p in (REPO / kind).iterdir() if p.is_dir()):
             src, override = self.variant(item, shared)
@@ -259,7 +261,7 @@ class Installer:
         cli = HOME / ".config/opencode/cli.json"
         data = json.loads(cli.read_text()) if cli.exists() else {}
         entries = data.setdefault("plugins", [])
-        wanted = [str(plugins / "army-tui"), str(plugins / "find")]
+        wanted = [str(plugins / "find")]
         missing = [p for p in wanted if {"package": p} not in entries]
         if not missing:
             return
@@ -293,6 +295,17 @@ class Installer:
         if self.harness == "opencode":
             self.server_plugins_opencode()
             self.tui_opencode()
+            self.army_opencode()
+
+    def army_opencode(self) -> None:
+        """Delegate to agentic-army's own installer when it is cloned alongside this repo."""
+        script = ARMY / "install.sh"
+        if not script.exists():
+            print(f"  skip     agentic-army not found at {ARMY} (clone alhurwitz/agentic-army there)")
+            return
+        self.log("run", script)
+        if not self.dry_run:
+            subprocess.run([str(script)], check=True)
 
 
 def main() -> int:
