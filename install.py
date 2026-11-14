@@ -259,7 +259,7 @@ class Installer:
         cli = HOME / ".config/opencode/cli.json"
         data = json.loads(cli.read_text()) if cli.exists() else {}
         entries = data.setdefault("plugins", [])
-        wanted = [str(plugins / "army-tui"), str(plugins / "find")]
+        wanted = [str(plugins / "find")]
         missing = [p for p in wanted if {"package": p} not in entries]
         if not missing:
             return

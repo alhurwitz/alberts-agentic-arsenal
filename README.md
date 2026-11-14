@@ -50,7 +50,7 @@ For non-OpenCode harnesses, OpenCode-only frontmatter (`model`, `agent`, `subtas
 ## What's in it
 
 - **Caveman**: terse-output mode. Skills `caveman*`, commands `/caveman*`, OpenCode plugin.
-- **Army**: hierarchical agent teams (`/alberts-army`, `army-officer`, `army-soldier`, plugin + TUI tree). OpenCode only: it depends on OpenCode's subagent tool.
+- **Army**: moved to its own repo, [agentic-army](https://github.com/alhurwitz/agentic-army). Install with its `install.sh`.
 - **Second brain**: injects the matching project page from an Obsidian vault (`SECOND_BRAIN_DIR`, default `~/Code/second-brain`). Commands `/save`, `/brain-lint`, `/brain-reindex`.
 - **UI and design**: impeccable, frontend-design, design-system, ui-ux-pro-max, ui-styling, ui-verify, accessibility, animation-forge, browser-qa, dev-browser, computer-use, ui-demo, liquid-glass-design, frontend-slides.
 - **Find**: OpenCode TUI search over the current session.
