@@ -120,6 +120,7 @@ ACTIONS = {
     "run": ("▶", "36"),
     "backup": ("⇢", "33"),
     "remove": ("✗", "31"),
+    "error": ("✗", "1", "31"),
     "skip": ("·", "2"),
     "note": ("!", "33"),
 }
@@ -147,16 +148,19 @@ def header(title: str, note: str = "") -> None:
 
 
 def step(action: str, detail: object) -> None:
-    icon, color = ACTIONS.get(action, ("•", "0"))
+    icon, *color = ACTIONS.get(action, ("•", "0"))
     STATS[action] = STATS.get(action, 0) + 1
-    print(f"  {style(icon, color)} {style(f'{action:<8}', color)} {tilde(detail)}")
+    print(f"  {style(icon, *color)} {style(f'{action:<8}', *color)} {tilde(detail)}")
 
 
 def summary(harnesses: list[str], started: float, dry_run: bool) -> None:
-    counts = [f"{n} {a}" for a, n in STATS.items() if a not in ("skip", "note")]
+    counts = [f"{n} {a}" for a, n in STATS.items() if a not in ("skip", "note", "error")]
     took = f"{time.time() - started:.1f}s"
     verb = "Planned" if dry_run else "Done"
-    print(f"\n{style('✔', '1', '32')} {style(verb, '1')} in {took}" + (f"  {style(' · '.join(counts), '2')}" if counts else ""))
+    mark = style("✔", "1", "32")
+    if STATS.get("error"):
+        verb, mark = f"Done with {STATS['error']} error(s)", style("✗", "1", "31")
+    print(f"\n{mark} {style(verb, '1')} in {took}" + (f"  {style(' · '.join(counts), '2')}" if counts else ""))
     if not dry_run:
         names = ", ".join(HARNESS_LABELS[h] for h in harnesses)
         print(f"  {style('Restart', '1')} {names} to pick up the changes.")
@@ -676,7 +680,10 @@ def install_army(harnesses: list[str], dry_run: bool) -> None:
             download_repo(ARMY_TARBALL, ARMY)
     step("run", f"{tilde(script)} {' '.join(harnesses)}")
     if not dry_run:
-        subprocess.run([str(script), *harnesses], check=True)
+        code = subprocess.run([str(script), *harnesses]).returncode
+        if code:
+            step("error", f"agentic-army installer exited with {code}; the rest of the arsenal is installed")
+            step("note", f"fix the error above, then re-run {tilde(script)} {' '.join(harnesses)}")
 
 
 def detect_harness(harness: str) -> bool:
@@ -714,7 +721,7 @@ def main() -> int:
         install_army(names, settings.dry_run)
     settings.save()
     summary(names, started, settings.dry_run)
-    return 0
+    return 1 if STATS.get("error") else 0
 
 
 if __name__ == "__main__":
