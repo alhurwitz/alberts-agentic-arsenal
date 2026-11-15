@@ -12,7 +12,7 @@ Every item (skill, agent, command, hook) is shared by default. A harness gets it
 variant only when the item has one: ``<item>/<harness>/`` for skills, ``<item>/<harness>.md``
 for agents and commands, ``hooks/<hook>/<harness>/`` for hooks. Shared files are symlinked
 so edits here apply everywhere; converted or templated files are regenerated on every run.
-Anything an install would replace is moved aside to ``<path>.bak-<timestamp>`` first.
+Anything an install would replace is moved to ``~/.config/agentic-arsenal/backups/<timestamp>/`` first.
 
 Optional modules are listed in ``modules.json``. The installer asks about each one the first
 time and remembers the answers in ``~/.config/agentic-arsenal/config.json``.
@@ -43,6 +43,7 @@ ARMY_TARBALL = "https://codeload.github.com/alhurwitz/agentic-army/tar.gz/refs/h
 CONFIG = HOME / ".config/agentic-arsenal/config.json"
 MODULES = json.loads((REPO / "modules.json").read_text())
 STAMP = time.strftime("%Y%m%d-%H%M%S")
+BACKUPS = HOME / ".config/agentic-arsenal/backups" / STAMP
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.S)
 ENV_REF = re.compile(r"\$\{(\w+)\}")
 OPENCODE_ONLY_KEYS = ("model", "agent", "subtask", "subagent", "mode", "permissions")
@@ -89,6 +90,15 @@ HARNESSES = {
         "commands": VSCODE_USER / "prompts",
     },
 }
+
+
+def backup_path(path: Path) -> Path:
+    """Where a replaced file goes: outside every harness folder, so harnesses never load it."""
+    try:
+        relative = path.relative_to(HOME)
+    except ValueError:
+        relative = Path(*path.parts[1:])
+    return BACKUPS / relative
 
 
 def expand(path: str) -> Path:
@@ -371,10 +381,11 @@ class Installer:
                 dest.unlink()
             return
         if dest.exists() or dest.is_symlink():
-            backup = dest.with_name(f"{dest.name}.bak-{STAMP}")
+            backup = backup_path(dest)
             self.log("backup", backup)
             if not self.dry_run:
-                dest.rename(backup)
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(dest), str(backup))
 
     def remove_ours(self, dest: Path, generated: str | None = None) -> None:
         """Remove what this repo installed for an item whose module is now disabled."""
@@ -406,7 +417,8 @@ class Installer:
         self.log("merge", path)
         if not self.dry_run:
             if path.exists():
-                shutil.copy2(path, path.with_name(f"{path.name}.bak-{STAMP}"))
+                backup_path(path).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, backup_path(path))
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(data, indent=2) + "\n")
 
@@ -586,7 +598,8 @@ class Installer:
         if not self.dry_run:
             config.parent.mkdir(parents=True, exist_ok=True)
             if config.exists():
-                shutil.copy2(config, config.with_name(f"{config.name}.bak-{STAMP}"))
+                backup_path(config).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(config, backup_path(config))
             config.write_text(text.rstrip() + ("\n\n" if text.strip() else "") + "\n\n".join(blocks) + "\n")
 
     def config_opencode(self) -> None:
