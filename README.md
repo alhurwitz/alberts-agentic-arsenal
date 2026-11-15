@@ -24,6 +24,25 @@ Then restart your agent.
 
 To update: re-run the curl command (or `git pull && ./install.py all` in a clone).
 
+### Uninstall
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alhurwitz/alberts-agentic-arsenal/main/install.sh | bash -s -- --uninstall
+# or just some harnesses:
+curl -fsSL https://raw.githubusercontent.com/alhurwitz/alberts-agentic-arsenal/main/install.sh | bash -s -- --uninstall codex copilot
+```
+
+From a clone: `./install.py --uninstall [harness...]`. Add `--dry-run` to preview.
+
+Uninstall removes only what the installer put there:
+- links into the repo
+- generated files that still match what it would write (a file you edited is left alone)
+- the instructions block (your own text in the same file stays)
+- the MCP servers and OpenCode plugin entries it added, if they are unchanged
+- empty folders it leaves behind
+
+With the `army` module on, it also runs agentic-army's `uninstall.sh` for the same harnesses. Uninstalling every harness also deletes `~/.config/agentic-arsenal/`, the downloaded copy in `~/.local/share/agentic-arsenal`, and a downloaded agentic-army. A git checkout is never deleted, and neither is your second-brain vault. Config files are backed up to `.bak-<timestamp>` before each change.
+
 ### Optional modules
 
 | Module | What you get | Asks |

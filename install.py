@@ -272,9 +272,9 @@ def ask_path(question: str, default: str) -> str:
 class Settings:
     """Optional-module choices, asked once and remembered in CONFIG."""
 
-    def __init__(self, args: argparse.Namespace) -> None:
+    def __init__(self, args: argparse.Namespace, ask: bool = True) -> None:
         saved = json.loads(CONFIG.read_text()) if CONFIG.exists() else {}
-        interactive = tty_interactive() and not args.dry_run
+        interactive = ask and tty_interactive() and not args.dry_run
         self.modules: dict[str, bool] = {}
         self.second_brain_dir = saved.get("secondBrainDir", SECOND_BRAIN_DEFAULT)
         pending = []
@@ -363,6 +363,17 @@ class Settings:
         step("note", "grant Accessibility (and Screen Recording for screenshots) to your terminal/agent app")
 
 
+def prune(node: object) -> bool:
+    """Drop empty dicts and lists nested in node, in place. True when node itself ends up empty."""
+    if isinstance(node, dict):
+        for key in [k for k, v in node.items() if isinstance(v, (dict, list)) and prune(v)]:
+            del node[key]
+        return not node
+    if isinstance(node, list):
+        return not node
+    return False
+
+
 class Installer:
     """Installs repo items into one harness."""
 
@@ -371,6 +382,10 @@ class Installer:
         self.paths = HARNESSES[harness]
         self.settings = settings
         self.dry_run = settings.dry_run
+        self.removing = False
+
+    def enabled(self, module: str) -> bool:
+        return self.settings.modules[module] and not self.removing
 
     def log(self, action: str, path: Path) -> None:
         step(action, path)
@@ -418,6 +433,14 @@ class Installer:
             dest.write_text(text)
 
     def save_json(self, path: Path, data: dict) -> None:
+        if self.removing:
+            prune(data)
+            if not data:
+                self.log("remove", path)
+                if not self.dry_run and path.exists():
+                    shutil.copy2(path, path.with_name(f"{path.name}.bak-{STAMP}"))
+                    path.unlink()
+                return
         self.log("merge", path)
         if not self.dry_run:
             if path.exists():
@@ -526,7 +549,7 @@ class Installer:
                 self.link(entry, plugins / entry.name)
 
     def install_mcp(self) -> None:
-        skipped = self.settings.excluded("mcp")
+        skipped = set() if self.removing else self.settings.excluded("mcp")
         servers = json.loads((REPO / "mcp/servers.json").read_text())
         servers = {name: spec for name, spec in servers.items() if name not in skipped}
         if "open-computer-use" in servers:
@@ -540,6 +563,14 @@ class Installer:
         node = data
         for key in keys:
             node = node.setdefault(key, {})
+        if self.removing:
+            ours = [k for k, v in entries.items() if node.get(k) == v]
+            if not ours:
+                return
+            for k in ours:
+                del node[k]
+            self.save_json(path, data)
+            return
         if all(node.get(k) == v for k, v in entries.items()):
             return
         node.update(entries)
@@ -583,8 +614,6 @@ class Installer:
         text = config.read_text() if config.exists() else ""
         blocks = []
         for name, spec in servers.items():
-            if f"[mcp_servers.{name}]" in text or f'[mcp_servers."{name}"]' in text:
-                continue
             lines = [f'[mcp_servers."{name}"]']
             if spec["type"] == "remote":
                 lines.append(f"url = {json.dumps(spec['url'])}")
@@ -595,8 +624,21 @@ class Installer:
             else:
                 lines.append(f"command = {json.dumps(spec['command'][0])}")
                 lines.append(f"args = {json.dumps(spec['command'][1:])}")
-            blocks.append("\n".join(lines))
+            block = "\n".join(lines)
+            if self.removing:
+                if block + "\n" in text:
+                    blocks.append(block)
+            elif f"[mcp_servers.{name}]" not in text and f'[mcp_servers."{name}"]' not in text:
+                blocks.append(block)
         if not blocks:
+            return
+        if self.removing:
+            for block in blocks:
+                text = text.replace(block + "\n", "")
+            self.log("remove", f"{tilde(config)} ({len(blocks)} MCP server(s))")
+            if not self.dry_run:
+                shutil.copy2(config, config.with_name(f"{config.name}.bak-{STAMP}"))
+                config.write_text(re.sub(r"\n{3,}", "\n\n", text).strip() + "\n" if text.strip() else "")
             return
         self.log("append", config)
         if not self.dry_run:
@@ -613,16 +655,16 @@ class Installer:
         changed = False
         caveman = {"package": "./plugins/caveman"}
         plugins = data.setdefault("plugins", [])
-        if self.settings.modules["caveman"] and caveman not in plugins:
+        if self.enabled("caveman") and caveman not in plugins:
             plugins.append(caveman)
             changed = True
-        if not self.settings.modules["caveman"] and caveman in plugins:
+        if not self.enabled("caveman") and caveman in plugins:
             plugins.remove(caveman)
             changed = True
         instructions = data.setdefault("instructions", [])
         pages = [f"{self.settings.second_brain_dir.rstrip('/')}/{page}" for page in SECOND_BRAIN_SESSION_PAGES]
         wanted = {expand(p) for p in pages}
-        if self.settings.modules["second-brain"]:
+        if self.enabled("second-brain"):
             present = {expand(p) for p in instructions}
             for path in pages:
                 if expand(path) not in present:
@@ -631,6 +673,9 @@ class Installer:
         elif any(expand(p) in wanted for p in instructions):
             instructions[:] = [p for p in instructions if expand(p) not in wanted]
             changed = True
+        if self.removing and config.exists():
+            prune(data)
+            changed = changed or data != json.loads(config.read_text())
         if changed:
             self.save_json(config, data)
 
@@ -638,9 +683,58 @@ class Installer:
         data = json.loads(cli.read_text()) if cli.exists() else {}
         entries = data.setdefault("plugins", [])
         find = {"package": str(HOME / ".config/opencode/plugins/find")}
-        if find not in entries:
+        if self.removing and find in entries:
+            entries.remove(find)
+            self.save_json(cli, data)
+        elif not self.removing and find not in entries:
             entries.append(find)
             self.save_json(cli, data)
+
+    def uninstall(self) -> None:
+        """Remove what this repo installed into the harness: links into the repo, generated files
+        that still match what it would write, its instructions block, and its config entries."""
+        header(HARNESS_LABELS[self.harness], tilde(self.paths["instructions"].parent))
+        self.removing = True
+        before = sum(STATS.values())
+        dest = self.paths["instructions"]
+        if dest.exists() and BLOCK.search(dest.read_text()):
+            rest = BLOCK.sub("", dest.read_text()).strip()
+            self.log("update" if rest else "remove", dest)
+            if not self.dry_run:
+                if rest:
+                    dest.write_text(rest + "\n")
+                else:
+                    dest.unlink()
+        for skill in sorted(p for p in (REPO / "skills").iterdir() if p.is_dir()):
+            self.remove_ours(self.paths["skills"] / skill.name)
+        for kind, shared in (("agents", "agent.md"), ("commands", "command.md")):
+            target = self.paths[kind]
+            if target is None or not (REPO / kind).is_dir():
+                continue
+            for item in sorted(p for p in (REPO / kind).iterdir() if p.is_dir()):
+                src, override = self.variant(item, shared)
+                if src is None:
+                    continue
+                rendered = self.settings.render(src.read_text())
+                native = override or self.harness == "opencode"
+                self.remove_ours(target / self.filename(kind, item.name), rendered if native else self.portable(rendered))
+        for hook in sorted(p for p in (REPO / "hooks").iterdir() if p.is_dir()):
+            installer = getattr(self, f"hook_{self.harness}", None)
+            if (hook / self.harness).is_dir() and installer is not None:
+                installer(hook / self.harness, True)
+        self.install_mcp()
+        if self.harness == "opencode":
+            self.config_opencode()
+        folders = [self.paths[k] for k in ("skills", "agents", "commands") if self.paths[k] is not None]
+        if self.harness == "opencode":
+            folders.append(HOME / ".config/opencode/plugins")
+        for folder in folders:
+            if folder.is_dir() and not any(folder.iterdir()):
+                self.log("remove", folder)
+                if not self.dry_run:
+                    folder.rmdir()
+        if sum(STATS.values()) == before:
+            print(f"  {style('✓', '32')} {style('nothing to remove', '2')}")
 
     def run(self) -> None:
         header(HARNESS_LABELS[self.harness], tilde(self.paths["instructions"].parent))
@@ -698,9 +792,50 @@ def install_army(harnesses: list[str], dry_run: bool) -> None:
             step("note", f"fix the error above, then re-run {tilde(script)} {' '.join(harnesses)}")
 
 
+def uninstall_army(harnesses: list[str], everything: bool, dry_run: bool) -> None:
+    """Run agentic-army's uninstaller; when removing everything, also delete a downloaded copy."""
+    header("Agentic army", tilde(ARMY))
+    script = ARMY / "uninstall.sh"
+    if not script.exists():
+        step("skip", f"no agentic-army at {tilde(ARMY)}")
+        return
+    step("run", f"{tilde(script)} {' '.join(harnesses)}")
+    if not dry_run:
+        code = subprocess.run([str(script), *harnesses]).returncode
+        if code:
+            step("error", f"agentic-army uninstaller exited with {code}")
+            return
+    if everything and not (ARMY / ".git").exists():
+        step("remove", ARMY)
+        if not dry_run:
+            shutil.rmtree(ARMY)
+
+
 def detect_harness(harness: str) -> bool:
     """True when the harness looks installed: its CLI is on PATH or its config folder exists."""
     return shutil.which(harness) is not None or HARNESSES[harness]["instructions"].parent.exists()
+
+
+def uninstall(names: list[str], args: argparse.Namespace, started: float) -> int:
+    args.reconfigure = False
+    settings = Settings(args, ask=False)
+    everything = set(names) == set(HARNESSES)
+    for name in names:
+        Installer(name, settings).uninstall()
+    if settings.modules.get("army"):
+        uninstall_army(names, everything, settings.dry_run)
+    if everything and CONFIG.parent.exists():
+        header("Settings")
+        step("remove", CONFIG.parent)
+        if not settings.dry_run:
+            shutil.rmtree(CONFIG.parent)
+    counts = [f"{n} {a}" for a, n in STATS.items() if a not in ("skip", "note", "error")]
+    verb = "Planned" if settings.dry_run else "Uninstalled"
+    mark = style("✗", "1", "31") if STATS.get("error") else style("✔", "1", "32")
+    print(f"\n{mark} {style(verb, '1')} in {time.time() - started:.1f}s" + (f"  {style(' · '.join(counts), '2')}" if counts else ""))
+    if not everything:
+        print(f"  {style('Settings kept', '2')} in {tilde(CONFIG)} (uninstall every harness to remove them)")
+    return 1 if STATS.get("error") else 0
 
 
 def main() -> int:
@@ -710,6 +845,7 @@ def main() -> int:
     parser.add_argument("--with", dest="with_modules", action="append", default=[], choices=list(MODULES))
     parser.add_argument("--without", dest="without_modules", action="append", default=[], choices=list(MODULES))
     parser.add_argument("--reconfigure", action="store_true", help="ask the optional-module questions again")
+    parser.add_argument("--uninstall", action="store_true", help="remove what the arsenal installed (all harnesses when none named)")
     args = parser.parse_args()
     unknown = [h for h in args.harnesses if h not in (*HARNESSES, "all")]
     if unknown:
@@ -717,6 +853,8 @@ def main() -> int:
     started = time.time()
     banner(args.dry_run)
     names = list(HARNESSES) if "all" in args.harnesses else args.harnesses
+    if args.uninstall:
+        return uninstall(names or list(HARNESSES), args, started)
     if not names:
         if not tty_interactive():
             parser.error("name at least one harness, or all")
