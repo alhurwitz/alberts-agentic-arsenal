@@ -30,7 +30,7 @@ done
 
 if [ -d "$DIR/.git" ]; then
   echo "==> using git checkout at $DIR"
-elif [ "$uninstall" = 1 ] && [ -f "$DIR/install.py" ]; then
+elif [ "$uninstall" = 1 ] && grep -q -- "--uninstall" "$DIR/install.py" 2>/dev/null; then
   echo "==> using installed copy at $DIR"
 else
   echo "==> downloading arsenal to $DIR"
