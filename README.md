@@ -6,19 +6,23 @@ Everything lives here once. `install.py` puts it where each harness looks. Items
 
 ## Quick start
 
-You need Python 3.9+ and git. Nothing else is required; optional pieces download what they need.
+You need Python 3.9+ and curl. Nothing else is required; optional pieces download what they need.
 
 ```sh
-git clone https://github.com/alhurwitz/alberts-agentic-arsenal ~/Code/alberts-agentic-arsenal
-cd ~/Code/alberts-agentic-arsenal
-./install.py all                 # or pick harnesses: ./install.py opencode claude
+curl -fsSL https://raw.githubusercontent.com/alhurwitz/alberts-agentic-arsenal/main/install.sh | bash
+# or skip the questions:
+curl -fsSL https://raw.githubusercontent.com/alhurwitz/alberts-agentic-arsenal/main/install.sh | bash -s -- claude --with army
 ```
 
-The first run asks about each optional module (below) and remembers your answers in `~/.config/agentic-arsenal/config.json`. Change them later with `./install.py all --reconfigure`, or per run with `--with <module>` / `--without <module>`. Preview any run with `--dry-run`.
+This downloads the repo to `~/.local/share/agentic-arsenal` (set `ARSENAL_DIR` to change it) and runs `install.py` from there. Run the same command again to update.
+
+To hack on the arsenal, clone it instead and run `./install.py all` from the checkout. `install.sh` also uses an existing git checkout at `ARSENAL_DIR` as-is.
+
+With no harness named, the installer shows a checklist of harnesses (the ones it finds are pre-checked; arrow keys, space, enter). The first run also shows a checklist of the optional modules (below), asks for paths with tab completion, and remembers your answers in `~/.config/agentic-arsenal/config.json`. Output is colored on a terminal; set `NO_COLOR=1` to turn that off. Change them later with `./install.py all --reconfigure`, or per run with `--with <module>` / `--without <module>`. Preview any run with `--dry-run`.
 
 Then restart your agent.
 
-To update: `git pull && ./install.py all`.
+To update: re-run the curl command (or `git pull && ./install.py all` in a clone).
 
 ### Optional modules
 
@@ -27,6 +31,7 @@ To update: `git pull && ./install.py all`.
 | `caveman` | Terse replies that cut output tokens: `/caveman` commands, skills, OpenCode plugin, and an instructions block | yes/no |
 | `second-brain` | A Markdown (Obsidian-compatible) vault your agents read for context and write learnings to: `/save`, `/brain-lint`, `/brain-reindex`, an OpenCode plugin that injects the current repo's page, and an instructions block | yes/no, then the vault folder. A starter vault is created there if the folder doesn't exist |
 | `computer-use` | macOS only. Agents drive native app windows through [open-computer-use](https://github.com/nogu66/open-computer-use): MCP server, `computer-use` skill, `/computer` | yes/no. Downloads the pinned `ocu` release to `~/.local/bin/ocu` (checksum verified) if it isn't installed. Grant Accessibility (and Screen Recording for screenshots) to your terminal or agent app |
+| `army` | Hierarchical agent teams from [agentic-army](https://github.com/alhurwitz/agentic-army): `/army`, officer and soldier agents, hooks and MCP server, for every harness you install | yes/no. Downloads agentic-army next to this repo if it isn't there (or set `AGENTIC_ARMY_DIR`), then runs its `install.sh` for the same harnesses |
 
 Everything else always installs: the UI/design skills and commands, the GitHub and Playwright MCP servers, and the OpenCode find plugin.
 
@@ -38,13 +43,9 @@ The GitHub MCP server reads `GITHUB_MCP_TOKEN`. Create a fine-grained token on G
 export GITHUB_MCP_TOKEN=github_pat_...
 ```
 
-### Agent teams
-
-The army (hierarchical agent teams) lives in its own repo, [agentic-army](https://github.com/alhurwitz/agentic-army). Clone it next to this one (`~/Code/agentic-army`, or set `AGENTIC_ARMY_DIR`) and `./install.py opencode` runs its installer too.
-
 ## What the installer touches
 
-- **Skills, commands, agents, plugins**: symlinks into this repo, so `git pull` updates them. Commands that are converted for a harness or contain your settings are written as files and refreshed on each run.
+- **Skills, commands, agents, plugins**: symlinks into this repo, so updating the repo updates them. Commands that are converted for a harness or contain your settings are written as files and refreshed on each run.
 - **Global instructions** (`AGENTS.md`, `CLAUDE.md`, `copilot-instructions.md`): only a block between `<!-- agentic-arsenal-begin -->` and `<!-- agentic-arsenal-end -->`. Your own text outside it is kept.
 - **Config files** (`opencode.json`, `~/.claude.json`, Codex `config.toml`, Copilot `mcp-config.json`, VS Code `mcp.json`): entries merged in, with a `.bak-<timestamp>` copy first.
 - Anything else it would replace is moved to `<path>.bak-<timestamp>`.
@@ -75,6 +76,7 @@ commands/<cmd>/command.md    shared slash command
 commands/<cmd>/<harness>.md  harness-specific command
 hooks/<hook>/<harness>/      plugin or hook code, per harness
 mcp/servers.json             MCP servers, written once; ${VAR} for secrets
+install.sh                   curl bootstrap: downloads the repo, runs install.py
 install.py                   installer
 ```
 

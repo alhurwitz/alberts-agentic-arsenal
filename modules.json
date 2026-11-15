@@ -21,5 +21,9 @@
     "skills": ["computer-use"],
     "commands": ["computer"],
     "mcp": ["open-computer-use"]
+  },
+  "army": {
+    "prompt": "Agentic army: hierarchical agent teams (/army) from the agentic-army repo",
+    "default": false
   }
 }

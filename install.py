@@ -21,6 +21,7 @@ time and remembers the answers in ``~/.config/agentic-arsenal/config.json``.
 from __future__ import annotations
 
 import argparse
+import glob
 import hashlib
 import json
 import os
@@ -38,6 +39,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent
 HOME = Path(os.environ.get("ARSENAL_HOME", Path.home()))
 ARMY = Path(os.environ.get("AGENTIC_ARMY_DIR", REPO.parent / "agentic-army"))
+ARMY_TARBALL = "https://codeload.github.com/alhurwitz/agentic-army/tar.gz/refs/heads/main"
 CONFIG = HOME / ".config/agentic-arsenal/config.json"
 MODULES = json.loads((REPO / "modules.json").read_text())
 STAMP = time.strftime("%Y%m%d-%H%M%S")
@@ -93,14 +95,164 @@ def expand(path: str) -> Path:
     return Path(re.sub(r"^~(?=$|/)", str(HOME), path)).resolve()
 
 
+# ---------------------------------------------------------------- terminal UI (stdlib only)
+
+COLOR = sys.stdout.isatty() and "NO_COLOR" not in os.environ and os.environ.get("TERM") != "dumb"
+STATS: dict[str, int] = {}
+ACTIONS = {
+    "link": ("→", "36"),
+    "write": ("✎", "34"),
+    "update": ("↻", "34"),
+    "merge": ("⊕", "35"),
+    "append": ("+", "32"),
+    "create": ("✚", "32"),
+    "download": ("↓", "36"),
+    "run": ("▶", "36"),
+    "backup": ("⇢", "33"),
+    "remove": ("✗", "31"),
+    "skip": ("·", "2"),
+    "note": ("!", "33"),
+}
+HARNESS_LABELS = {"opencode": "OpenCode", "claude": "Claude Code", "codex": "Codex", "copilot": "Copilot"}
+
+
+def style(text: str, *codes: str) -> str:
+    return f"\033[{';'.join(codes)}m{text}\033[0m" if COLOR and codes else text
+
+
+def tilde(value: object) -> str:
+    text = str(value)
+    home = str(HOME)
+    return "~" + text[len(home):] if text == home or text.startswith(home + "/") else text
+
+
+def banner(dry_run: bool) -> None:
+    title = style(" agentic arsenal ", "1", "30", "48;5;213")
+    mode = style("  dry run: nothing will change", "33") if dry_run else ""
+    print(f"\n{title}{mode}")
+
+
+def header(title: str, note: str = "") -> None:
+    print(f"\n{style('▌', '38;5;213')} {style(title, '1')}" + (f"  {style(note, '2')}" if note else ""))
+
+
+def step(action: str, detail: object) -> None:
+    icon, color = ACTIONS.get(action, ("•", "0"))
+    STATS[action] = STATS.get(action, 0) + 1
+    print(f"  {style(icon, color)} {style(f'{action:<8}', color)} {tilde(detail)}")
+
+
+def summary(harnesses: list[str], started: float, dry_run: bool) -> None:
+    counts = [f"{n} {a}" for a, n in STATS.items() if a not in ("skip", "note")]
+    took = f"{time.time() - started:.1f}s"
+    verb = "Planned" if dry_run else "Done"
+    print(f"\n{style('✔', '1', '32')} {style(verb, '1')} in {took}" + (f"  {style(' · '.join(counts), '2')}" if counts else ""))
+    if not dry_run:
+        names = ", ".join(HARNESS_LABELS[h] for h in harnesses)
+        print(f"  {style('Restart', '1')} {names} to pick up the changes.")
+
+
+def tty_interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
 def ask_yes_no(question: str, default: bool) -> bool:
     hint = "Y/n" if default else "y/N"
     while True:
-        answer = input(f"{question}? [{hint}] ").strip().lower()
+        answer = input(f"{style('?', '1', '36')} {style(question, '1')} {style(f'({hint})', '2')} ").strip().lower()
         if not answer:
             return default
         if answer in ("y", "yes", "n", "no"):
             return answer.startswith("y")
+
+
+def checklist(title: str, items: list[tuple[str, str, bool]]) -> list[bool]:
+    """Arrow-key multi-select. items are (label, hint, checked). Falls back to y/n questions."""
+    try:
+        import termios
+        import tty
+    except ImportError:
+        termios = None  # type: ignore[assignment]
+    if termios is None or not tty_interactive():
+        return [ask_yes_no(f"{label}: {hint}", on) for label, hint, on in items]
+
+    checked = [on for _, _, on in items]
+    cur = 0
+    n = len(items)
+    width = shutil.get_terminal_size().columns or 80
+    label_w = max(len(label) for label, _, _ in items)
+    out = sys.stdout
+
+    def render(first: bool = False) -> None:
+        if not first:
+            out.write(f"\033[{n}A")
+        for i, (label, hint, _) in enumerate(items):
+            room = max(0, width - label_w - 10)
+            hint = hint if len(hint) <= room else hint[: max(0, room - 1)] + "…"
+            pointer = style("❯", "1", "36") if i == cur else " "
+            box = style("◉", "32") if checked[i] else style("◯", "2")
+            name = style(label.ljust(label_w), "1") if i == cur else label.ljust(label_w)
+            out.write(f"\r\033[2K  {pointer} {box} {name}  {style(hint, '2')}\n")
+        out.flush()
+
+    keys = "↑↓ move · space toggle · a all · enter confirm"
+    out.write(f"{style('?', '1', '36')} {style(title, '1')}  {style(keys, '2')}\n\033[?25l")
+    render(first=True)
+    fd = sys.stdin.fileno()
+    saved = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        while True:
+            key = os.read(fd, 3)
+            if key in (b"\x1b[A", b"k"):
+                cur = (cur - 1) % n
+            elif key in (b"\x1b[B", b"j"):
+                cur = (cur + 1) % n
+            elif key == b" ":
+                checked[cur] = not checked[cur]
+            elif key == b"a":
+                checked = [not all(checked)] * n
+            elif key in (b"\r", b"\n"):
+                break
+            render()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+        out.write("\033[?25h")
+    chosen = [label for (label, _, _), on in zip(items, checked) if on]
+    out.write(f"\033[{n + 1}A\r\033[J")
+    print(f"{style('✔', '32')} {style(title, '1')}  {style(', '.join(chosen) or 'none', '36')}")
+    return checked
+
+
+def ask_path(question: str, default: str) -> str:
+    """Prompt for a path with tab completion. Enter keeps the default."""
+    try:
+        import readline
+    except ImportError:
+        answer = input(f"{style('?', '1', '36')} {style(question, '1')} {style(f'[{default}]', '2')} ").strip()
+        return answer or default
+
+    def complete(text: str, state: int) -> str | None:
+        expanded = os.path.expanduser(text)
+        matches = []
+        for match in sorted(glob.glob(glob.escape(expanded) + "*")):
+            if os.path.isdir(match):
+                match += "/"
+            if text.startswith("~"):
+                match = "~" + match[len(os.path.expanduser("~")):]
+            matches.append(match)
+        return matches[state] if state < len(matches) else None
+
+    libedit = "libedit" in (readline.__doc__ or "")
+    readline.set_completer_delims(" \t\n")
+    readline.set_completer(complete)
+    readline.parse_and_bind("bind ^I rl_complete" if libedit else "tab: complete")
+    try:
+        hint = style(f"[{default}] tab completes", "2")
+        answer = input(f"{style('?', '1', '36')} {style(question, '1')} {hint} ").strip()
+    finally:
+        readline.set_completer(None)
+    return answer or default
 
 
 class Settings:
@@ -108,9 +260,10 @@ class Settings:
 
     def __init__(self, args: argparse.Namespace) -> None:
         saved = json.loads(CONFIG.read_text()) if CONFIG.exists() else {}
-        interactive = sys.stdin.isatty() and not args.dry_run
+        interactive = tty_interactive() and not args.dry_run
         self.modules: dict[str, bool] = {}
         self.second_brain_dir = saved.get("secondBrainDir", SECOND_BRAIN_DEFAULT)
+        pending = []
         for name, module in MODULES.items():
             if platform.system() not in module.get("platforms", [platform.system()]):
                 self.modules[name] = False
@@ -118,13 +271,16 @@ class Settings:
                 self.modules[name] = name in args.with_modules
             elif name in saved.get("modules", {}) and not args.reconfigure:
                 self.modules[name] = saved["modules"][name]
-            elif interactive:
-                self.modules[name] = ask_yes_no(module["prompt"], module["default"])
-                if name == "second-brain" and self.modules[name]:
-                    answer = input(f"  Vault folder (created if missing) [{self.second_brain_dir}]: ").strip()
-                    self.second_brain_dir = answer or self.second_brain_dir
             else:
                 self.modules[name] = module["default"]
+                if interactive:
+                    pending.append(name)
+        if pending:
+            items = [(name, MODULES[name]["prompt"].split(": ", 1)[-1], self.modules[name]) for name in pending]
+            for name, on in zip(pending, checklist("Optional modules", items)):
+                self.modules[name] = on
+            if "second-brain" in pending and self.modules["second-brain"]:
+                self.second_brain_dir = ask_path("Vault folder (created if missing)", self.second_brain_dir)
         self.dry_run = args.dry_run
 
     def excluded(self, kind: str) -> set[str]:
@@ -148,9 +304,8 @@ class Settings:
 
     def prepare(self) -> None:
         """One-time setup that does not depend on a harness."""
-        print("[setup]")
         enabled = [name for name, on in self.modules.items() if on]
-        print(f"  modules  {', '.join(enabled) or 'none'}")
+        header("Setup", f"modules: {', '.join(enabled) or 'none'}")
         if self.modules["second-brain"]:
             self.create_vault()
         if self.modules["computer-use"]:
@@ -160,7 +315,7 @@ class Settings:
         vault = expand(self.second_brain_dir)
         if vault.exists():
             return
-        print(f"  create   {vault} (from templates/second-brain)")
+        step("create", f"{tilde(vault)} (from templates/second-brain)")
         if self.dry_run:
             return
         shutil.copytree(REPO / "templates/second-brain", vault)
@@ -175,7 +330,7 @@ class Settings:
         dest = self.ocu_path()
         if dest.exists():
             return
-        print(f"  download ocu {OCU_VERSION} -> {dest}")
+        step("download", f"ocu {OCU_VERSION} → {tilde(dest)}")
         if self.dry_run:
             return
         with tempfile.TemporaryDirectory() as tmp:
@@ -191,7 +346,7 @@ class Settings:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(extracted.read())
         dest.chmod(0o755)
-        print("  note     grant Accessibility (and Screen Recording for screenshots) to your terminal/agent app")
+        step("note", "grant Accessibility (and Screen Recording for screenshots) to your terminal/agent app")
 
 
 class Installer:
@@ -204,7 +359,7 @@ class Installer:
         self.dry_run = settings.dry_run
 
     def log(self, action: str, path: Path) -> None:
-        print(f"  {action:8} {path}")
+        step(action, path)
 
     def ours(self, dest: Path) -> bool:
         return dest.is_symlink() and REPO in Path(os.readlink(dest)).parents
@@ -342,7 +497,7 @@ class Installer:
                 continue
             installer = getattr(self, f"hook_{self.harness}", None)
             if installer is None:
-                print(f"  skip     hook {hook.name}: no installer for {self.harness}")
+                step("skip", f"hook {hook.name}: no installer for {self.harness}")
                 continue
             installer(src, hook.name in skipped)
 
@@ -470,18 +625,9 @@ class Installer:
             entries.append(find)
             self.save_json(cli, data)
 
-    def army_opencode(self) -> None:
-        """Delegate to agentic-army's own installer when it is cloned alongside this repo."""
-        script = ARMY / "install.sh"
-        if not script.exists():
-            print(f"  skip     agentic-army not found at {ARMY} (clone alhurwitz/agentic-army there)")
-            return
-        self.log("run", script)
-        if not self.dry_run:
-            subprocess.run([str(script)], check=True)
-
     def run(self) -> None:
-        print(f"[{self.harness}]")
+        header(HARNESS_LABELS[self.harness], tilde(self.paths["instructions"].parent))
+        before = sum(STATS.values())
         self.install_instructions()
         self.install_skills()
         self.install_markdown("agents", "agent.md")
@@ -490,23 +636,71 @@ class Installer:
         self.install_mcp()
         if self.harness == "opencode":
             self.config_opencode()
-            self.army_opencode()
+        if sum(STATS.values()) == before:
+            print(f"  {style('✓', '32')} {style('up to date', '2')}")
+
+
+def download_repo(url: str, dest: Path) -> None:
+    """Download a GitHub tarball and unpack its top-level folder into dest."""
+    with tempfile.TemporaryDirectory() as tmp:
+        archive = Path(tmp) / "repo.tar.gz"
+        urllib.request.urlretrieve(url, archive)
+        with tarfile.open(archive) as tar:
+            kwargs = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
+            tar.extractall(tmp, **kwargs)
+        (top,) = [p for p in Path(tmp).iterdir() if p.is_dir()]
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(top), dest)
+
+
+def install_army(harnesses: list[str], dry_run: bool) -> None:
+    """Run agentic-army's installer for these harnesses, downloading it next to this repo if missing."""
+    header("Agentic army", tilde(ARMY))
+    script = ARMY / "install.sh"
+    if not script.exists():
+        step("download", f"agentic-army → {tilde(ARMY)}")
+        if not dry_run:
+            download_repo(ARMY_TARBALL, ARMY)
+    step("run", f"{tilde(script)} {' '.join(harnesses)}")
+    if not dry_run:
+        subprocess.run([str(script), *harnesses], check=True)
+
+
+def detect_harness(harness: str) -> bool:
+    """True when the harness looks installed: its CLI is on PATH or its config folder exists."""
+    return shutil.which(harness) is not None or HARNESSES[harness]["instructions"].parent.exists()
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("harnesses", nargs="+", choices=[*HARNESSES, "all"])
+    parser.add_argument("harnesses", nargs="*", metavar="harness", help=f"{', '.join(HARNESSES)} or all (asks when omitted)")
     parser.add_argument("--dry-run", action="store_true", help="print actions without changing anything")
     parser.add_argument("--with", dest="with_modules", action="append", default=[], choices=list(MODULES))
     parser.add_argument("--without", dest="without_modules", action="append", default=[], choices=list(MODULES))
     parser.add_argument("--reconfigure", action="store_true", help="ask the optional-module questions again")
     args = parser.parse_args()
+    unknown = [h for h in args.harnesses if h not in (*HARNESSES, "all")]
+    if unknown:
+        parser.error(f"unknown harness: {', '.join(unknown)} (choose from {', '.join(HARNESSES)}, all)")
+    started = time.time()
+    banner(args.dry_run)
+    names = list(HARNESSES) if "all" in args.harnesses else args.harnesses
+    if not names:
+        if not tty_interactive():
+            parser.error("name at least one harness, or all")
+        items = [(h, HARNESS_LABELS[h], detect_harness(h)) for h in HARNESSES]
+        names = [h for h, on in zip(HARNESSES, checklist("Install into", items)) if on]
+        if not names:
+            print(style("Nothing selected.", "2"))
+            return 0
     settings = Settings(args)
     settings.prepare()
-    names = list(HARNESSES) if "all" in args.harnesses else args.harnesses
     for name in names:
         Installer(name, settings).run()
+    if settings.modules["army"]:
+        install_army(names, settings.dry_run)
     settings.save()
+    summary(names, started, settings.dry_run)
     return 0
 
 
