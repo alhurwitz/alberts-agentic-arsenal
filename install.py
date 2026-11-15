@@ -751,8 +751,8 @@ class Installer:
             print(f"  {style('✓', '32')} {style('up to date', '2')}")
 
 
-def download_repo(url: str, dest: Path, keep: tuple[str, ...] = ()) -> None:
-    """Download a GitHub tarball into dest, replacing what is there but keeping the named subfolders."""
+def download_repo(url: str, dest: Path) -> None:
+    """Download a GitHub tarball into dest, replacing what is there."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=dest.parent) as tmp:
         archive = Path(tmp) / "repo.tar.gz"
@@ -762,9 +762,6 @@ def download_repo(url: str, dest: Path, keep: tuple[str, ...] = ()) -> None:
             kwargs = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
             tar.extractall(unpacked, **kwargs)
         (top,) = [p for p in unpacked.iterdir() if p.is_dir()]
-        for name in keep:
-            if (dest / name).exists():
-                shutil.move(str(dest / name), top / name)
         if dest.exists():
             shutil.move(str(dest), Path(tmp) / "old")
         shutil.move(str(top), dest)
@@ -774,7 +771,7 @@ def install_army(harnesses: list[str], dry_run: bool) -> None:
     """Run agentic-army's installer for these harnesses.
 
     A git checkout at ARMY is used as-is. Otherwise the latest main is downloaded there on every
-    run, keeping the Node runtime agentic-army may have installed into its node/ subfolder.
+    run (agentic-army keeps its Node runtime and run state outside the code folder).
     """
     header("Agentic army", tilde(ARMY))
     script = ARMY / "install.sh"
@@ -783,7 +780,7 @@ def install_army(harnesses: list[str], dry_run: bool) -> None:
     else:
         step("download", f"agentic-army (main) → {tilde(ARMY)}")
         if not dry_run:
-            download_repo(ARMY_TARBALL, ARMY, keep=("node",))
+            download_repo(ARMY_TARBALL, ARMY)
     step("run", f"{tilde(script)} {' '.join(harnesses)}")
     if not dry_run:
         code = subprocess.run([str(script), *harnesses]).returncode
