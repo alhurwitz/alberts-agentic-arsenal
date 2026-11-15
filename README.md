@@ -24,6 +24,25 @@ Then restart your agent.
 
 To update: re-run the curl command (or `git pull && ./install.py all` in a clone).
 
+### Uninstall
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alhurwitz/alberts-agentic-arsenal/main/install.sh | bash -s -- --uninstall
+# or just some harnesses:
+curl -fsSL https://raw.githubusercontent.com/alhurwitz/alberts-agentic-arsenal/main/install.sh | bash -s -- --uninstall codex copilot
+```
+
+From a clone: `./install.py --uninstall [harness...]`. Add `--dry-run` to preview.
+
+Uninstall removes only what the installer put there:
+- links into the repo
+- generated files that still match what it would write (a file you edited is left alone)
+- the instructions block (your own text in the same file stays)
+- the MCP servers and OpenCode plugin entries it added, if they are unchanged
+- empty folders it leaves behind
+
+With the `army` module on, it also runs agentic-army's `uninstall.sh` for the same harnesses. Uninstalling every harness also deletes the saved settings (`~/.config/agentic-arsenal/config.json`), the downloaded copy in `~/.local/share/agentic-arsenal`, and a downloaded agentic-army. A git checkout is never deleted, and neither is your second-brain vault. Config files are backed up to `~/.config/agentic-arsenal/backups/<timestamp>/` before each change, and that folder is kept.
+
 ### Optional modules
 
 | Module | What you get | Asks |
@@ -31,7 +50,7 @@ To update: re-run the curl command (or `git pull && ./install.py all` in a clone
 | `caveman` | Terse replies that cut output tokens: `/caveman` commands, skills, OpenCode plugin, and an instructions block | yes/no |
 | `second-brain` | A Markdown (Obsidian-compatible) vault your agents read for context and write learnings to: `/save`, `/brain-lint`, `/brain-reindex`, an OpenCode plugin that injects the current repo's page, and an instructions block | yes/no, then the vault folder. A starter vault is created there if the folder doesn't exist |
 | `computer-use` | macOS only. Agents drive native app windows through [open-computer-use](https://github.com/nogu66/open-computer-use): MCP server, `computer-use` skill, `/computer` | yes/no. Downloads the pinned `ocu` release to `~/.local/bin/ocu` (checksum verified) if it isn't installed. Grant Accessibility (and Screen Recording for screenshots) to your terminal or agent app |
-| `army` | Hierarchical agent teams from [agentic-army](https://github.com/alhurwitz/agentic-army): `/army`, officer and soldier agents, hooks and MCP server, for every harness you install | yes/no. Downloads agentic-army next to this repo if it isn't there (or set `AGENTIC_ARMY_DIR`), then runs its `install.sh` for the same harnesses |
+| `army` | Hierarchical agent teams from [agentic-army](https://github.com/alhurwitz/agentic-army): `/army`, officer and soldier agents, hooks and MCP server, for every harness you install | yes/no. Downloads the latest agentic-army next to this repo on every run (a git checkout there, or at `AGENTIC_ARMY_DIR`, is used as-is), then runs its `install.sh` for the same harnesses |
 
 Everything else always installs: the UI/design skills and commands, the GitHub and Playwright MCP servers, and the OpenCode find plugin.
 
