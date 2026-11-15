@@ -438,7 +438,8 @@ class Installer:
             if not data:
                 self.log("remove", path)
                 if not self.dry_run and path.exists():
-                    shutil.copy2(path, path.with_name(f"{path.name}.bak-{STAMP}"))
+                    backup_path(path).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(path, backup_path(path))
                     path.unlink()
                 return
         self.log("merge", path)
@@ -637,7 +638,8 @@ class Installer:
                 text = text.replace(block + "\n", "")
             self.log("remove", f"{tilde(config)} ({len(blocks)} MCP server(s))")
             if not self.dry_run:
-                shutil.copy2(config, config.with_name(f"{config.name}.bak-{STAMP}"))
+                backup_path(config).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(config, backup_path(config))
                 config.write_text(re.sub(r"\n{3,}", "\n\n", text).strip() + "\n" if text.strip() else "")
             return
         self.log("append", config)
@@ -821,11 +823,16 @@ def uninstall(names: list[str], args: argparse.Namespace, started: float) -> int
         Installer(name, settings).uninstall()
     if settings.modules.get("army"):
         uninstall_army(names, everything, settings.dry_run)
-    if everything and CONFIG.parent.exists():
+    if everything and CONFIG.exists():
         header("Settings")
-        step("remove", CONFIG.parent)
+        step("remove", CONFIG)
         if not settings.dry_run:
-            shutil.rmtree(CONFIG.parent)
+            CONFIG.unlink()
+        backups = CONFIG.parent / "backups"
+        if backups.is_dir():
+            step("note", f"backups kept in {tilde(backups)}")
+        elif not settings.dry_run and not any(CONFIG.parent.iterdir()):
+            CONFIG.parent.rmdir()
     counts = [f"{n} {a}" for a, n in STATS.items() if a not in ("skip", "note", "error")]
     verb = "Planned" if settings.dry_run else "Uninstalled"
     mark = style("✗", "1", "31") if STATS.get("error") else style("✔", "1", "32")

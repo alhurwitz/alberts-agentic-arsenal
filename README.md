@@ -41,7 +41,7 @@ Uninstall removes only what the installer put there:
 - the MCP servers and OpenCode plugin entries it added, if they are unchanged
 - empty folders it leaves behind
 
-With the `army` module on, it also runs agentic-army's `uninstall.sh` for the same harnesses. Uninstalling every harness also deletes `~/.config/agentic-arsenal/`, the downloaded copy in `~/.local/share/agentic-arsenal`, and a downloaded agentic-army. A git checkout is never deleted, and neither is your second-brain vault. Config files are backed up to `.bak-<timestamp>` before each change.
+With the `army` module on, it also runs agentic-army's `uninstall.sh` for the same harnesses. Uninstalling every harness also deletes the saved settings (`~/.config/agentic-arsenal/config.json`), the downloaded copy in `~/.local/share/agentic-arsenal`, and a downloaded agentic-army. A git checkout is never deleted, and neither is your second-brain vault. Config files are backed up to `~/.config/agentic-arsenal/backups/<timestamp>/` before each change, and that folder is kept.
 
 ### Optional modules
 
